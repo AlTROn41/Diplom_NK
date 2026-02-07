@@ -1,0 +1,867 @@
+import React, { useState, useEffect } from 'react';
+import { ChevronDown, Loader2, FileCheck, Plus, Trash2 } from 'lucide-react';
+import api from '../services/api';
+import { buildTechCardPayload, updateTechCard } from '../data/formConfig';
+import ImageUpload from './ImageUpload';
+
+// Компонент поля с возможностью ввода И выбора из списка
+const ComboBoxField = ({ label, value, inputValue, options, onChange,
+  onInputChange, loading, placeholder, disabled }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    onInputChange(newValue);
+  };
+
+  const handleSelectOption = (option) => {
+    onChange(option);
+    setIsOpen(false);
+  };
+
+  // Фильтруем опции по введённому тексту
+  const filteredOptions = options.filter(opt =>
+    opt.name.toLowerCase().includes((inputValue || '').toLowerCase())
+  );
+
+  return (
+    <div className="relative">
+      <label className="block text-[#646C89] text-sm font-medium mb-2">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type="text"
+          value={inputValue || ''}
+          onChange={handleInputChange}
+          onFocus={() => !disabled && !loading && setIsOpen(true)}
+          placeholder={loading ? 'Загрузка...' : placeholder}
+          disabled={disabled || loading}
+          className={`
+            w-full bg-[#0C1515] border border-[#646C89]
+            rounded-lg px-4 py-3 pr-10
+            text-white placeholder-[#646C89]
+            focus:outline-none focus:border-[#0084FF]
+            transition-colors
+            ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+          `}
+        />
+        {loading ? (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <Loader2 size={18} className="animate-spin text-[#646C89]" />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => !disabled && setIsOpen(!isOpen)}
+            disabled={disabled}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#646C89] hover:text-[#0084FF]"
+          >
+            <ChevronDown size={18} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && !disabled && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 bg-[#0C1515] border border-[#646C89] rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelectOption(option)}
+                  className={`
+                    w-full text-left px-4 py-3
+                    hover:bg-[#0084FF]/20 transition-colors
+                    ${value === option.id ? 'bg-[#0084FF]/10 text-[#0084FF]' : 'text-white'}
+                  `}
+                >
+                  {option.name}
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-3 text-[#646C89] text-sm">
+                {inputValue ? `Будет использовано: "${inputValue}"` : 'Нет доступных вариантов'}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// Функция валидации значения по типу данных
+const validateByType = (value, typeData) => {
+  if (!value || value.trim() === '') {
+    return { isValid: true, error: null }; // Пустое значение допустимо
+  }
+
+  const trimmedValue = value.trim();
+  const normalizedType = (typeData || 'string').toLowerCase();
+
+  switch (normalizedType) {
+    case 'int':
+    case 'integer':
+      // Целое число: только цифры и опциональный минус в начале
+      if (!/^-?\d+$/.test(trimmedValue)) {
+        return { isValid: false, error: 'Введите целое число' };
+      }
+      return { isValid: true, error: null };
+
+    case 'double':
+    case 'float':
+    case 'real':
+      // Вещественное число: цифры, опциональная точка/запятая, опциональный минус
+      const normalizedNum = trimmedValue.replace(',', '.');
+      if (!/^-?\d*\.?\d+$/.test(normalizedNum) || isNaN(parseFloat(normalizedNum))) {
+        return { isValid: false, error: 'Введите число (например: 12.5)' };
+      }
+      return { isValid: true, error: null };
+
+    case 'bool':
+    case 'boolean':
+      // Булево: true/false, да/нет, 1/0
+      const boolValues = ['true', 'false', 'да', 'нет', '1', '0', 'yes', 'no'];
+      if (!boolValues.includes(trimmedValue.toLowerCase())) {
+        return { isValid: false, error: 'Введите: да/нет, true/false или 1/0' };
+      }
+      return { isValid: true, error: null };
+
+    case 'string':
+    case 'text':
+    default:
+      // Строка: любое значение допустимо
+      return { isValid: true, error: null };
+  }
+};
+
+// Получение типа input на основе typeData
+const getInputType = (typeData) => {
+  const normalizedType = (typeData || 'string').toLowerCase();
+  switch (normalizedType) {
+    case 'int':
+    case 'integer':
+    case 'double':
+    case 'float':
+    case 'real':
+      return 'text'; // Используем text для лучшего контроля валидации
+    default:
+      return 'text';
+  }
+};
+
+// Получение подсказки по типу данных
+const getTypeHint = (typeData) => {
+  const normalizedType = (typeData || 'string').toLowerCase();
+  switch (normalizedType) {
+    case 'int':
+    case 'integer':
+      return 'Целое число';
+    case 'double':
+    case 'float':
+    case 'real':
+      return 'Число';
+    case 'bool':
+    case 'boolean':
+      return 'Да/Нет';
+    default:
+      return null;
+  }
+};
+
+// Компонент поля ввода с выпадающим списком стандартных значений и валидацией
+const InputWithSuggestions = ({ label, value, onChange, standardValues, loading, placeholder, typeData }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const validation = validateByType(value, typeData);
+  const showError = touched && !validation.isValid;
+  const typeHint = getTypeHint(typeData);
+
+  const handleChange = (newValue) => {
+    // Для числовых типов разрешаем ввод только допустимых символов
+    const normalizedType = (typeData || 'string').toLowerCase();
+
+    if (normalizedType === 'int' || normalizedType === 'integer') {
+      // Разрешаем только цифры и минус
+      if (newValue !== '' && !/^-?\d*$/.test(newValue)) {
+        return; // Игнорируем недопустимый ввод
+      }
+    } else if (['double', 'float', 'real'].includes(normalizedType)) {
+      // Разрешаем цифры, точку, запятую и минус
+      if (newValue !== '' && !/^-?\d*[.,]?\d*$/.test(newValue)) {
+        return; // Игнорируем недопустимый ввод
+      }
+    }
+
+    onChange(newValue);
+  };
+
+  const handleBlur = () => {
+    setTouched(true);
+  };
+
+  return (
+    <div className="relative">
+      <label className="block text-[#646C89] text-sm font-medium mb-2">
+        {label}
+        {typeHint && (
+          <span className="ml-2 text-xs text-[#646C89]/70">({typeHint})</span>
+        )}
+      </label>
+      <div className="relative">
+        <input
+          type={getInputType(typeData)}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder} Ф
+          className={`
+            w-full bg-[#0C1515] border
+            rounded-lg px-4 py-3 pr-10
+            text-white placeholder-[#646C89]
+            focus:outline-none
+            transition-colors
+            ${showError
+              ? 'border-red-500 focus:border-red-500'
+              : 'border-[#646C89] focus:border-[#0084FF]'
+            }
+          `}
+        />
+        {loading ? (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <Loader2 size={18} className="animate-spin text-[#646C89]" />
+          </div>
+        ) : standardValues && standardValues.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#646C89] hover:text-[#0084FF]"
+          >
+            <ChevronDown size={18} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Сообщение об ошибке */}
+      {showError && (
+        <span className="text-xs text-red-500 mt-1 block">
+          {validation.error}
+        </span>
+      )}
+
+      {isOpen && standardValues && standardValues.length > 0 && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 bg-[#0C1515] border border-[#646C89] rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+            <div className="p-2 border-b border-[#646C89]/30">
+              <span className="text-xs text-[#646C89]">Стандартные значения:</span>
+            </div>
+            {standardValues.map((val, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  onChange(val.toString());
+                  setIsOpen(false);
+                  setTouched(true);
+                }}
+                className="w-full text-left px-4 py-2 text-white hover:bg-[#0084FF]/20 transition-colors"
+              >
+                {val}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {!loading && !showError && standardValues && standardValues.length > 0 && (
+        <span className="text-xs text-[#646C89] mt-1 block">
+          {standardValues.length} стандартных значений
+        </span>
+      )}
+    </div>
+  );
+};
+
+// Компонент кастомного поля (название + значение + удаление)
+const CustomField = ({ field, onUpdate, onDelete }) => {
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="flex-1">
+        <input
+          type="text"
+          value={field.name}
+          onChange={(e) => onUpdate(field.id, 'name', e.target.value)}
+          placeholder="Название поля"
+          className="
+            w-full bg-[#0C1515] border border-[#646C89]
+            rounded-lg px-4 py-3
+            text-white placeholder-[#646C89]
+            focus:outline-none focus:border-[#0084FF]
+            transition-colors mb-2
+          "
+        />
+        <input
+          type="text"
+          value={field.value}
+          onChange={(e) => onUpdate(field.id, 'value', e.target.value)}
+          placeholder="Значение"
+          className="
+            w-full bg-[#0C1515] border border-[#646C89]
+            rounded-lg px-4 py-3
+            text-white placeholder-[#646C89]
+            focus:outline-none focus:border-[#0084FF]
+            transition-colors
+          "
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => onDelete(field.id)}
+        className="
+          mt-3 p-2
+          text-[#646C89] hover:text-red-500
+          hover:bg-red-500/10
+          rounded-lg
+          transition-colors
+        "
+        title="Удалить поле"
+      >
+        <Trash2 size={20} />
+      </button>
+    </div>
+  );
+};
+
+// Основной компонент формы технологической карты
+const TechCardForm = () => {
+  // Типы объектов
+  const [objectTypes, setObjectTypes] = useState([]);
+  const [loadingObjects, setLoadingObjects] = useState(true);
+  const [selectedObject, setSelectedObject] = useState(null);
+  const [objectInputValue, setObjectInputValue] = useState('');
+
+  // Элементы (объекты контроля)
+  const [elements, setElements] = useState([]);
+  const [loadingElements, setLoadingElements] = useState(false);
+  const [selectedElement, setSelectedElement] = useState(null);
+  const [elementInputValue, setElementInputValue] = useState('');
+
+  // Блоки с параметрами (новая структура)
+  const [blocks, setBlocks] = useState([]);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
+  const [objectType, setObjectType] = useState(null); // "пластина" или "труба"
+
+  // Значения параметров { paramId: value }
+  const [paramValues, setParamValues] = useState({});
+
+  // Флаг отправки на обработку
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Кастомные поля пользователя
+  const [customFields, setCustomFields] = useState([]);
+  const [nextCustomFieldId, setNextCustomFieldId] = useState(1);
+
+  // Загруженные изображения
+  const [uploadedImages, setUploadedImages] = useState([]);
+
+  // Загрузка типов объектов при старте
+  useEffect(() => {
+    const loadObjectTypes = async () => {
+      try {
+        const types = await api.getObjectTypes();
+        setObjectTypes(types);
+      } catch (error) {
+        console.error('Ошибка загрузки типов объектов:', error);
+      } finally {
+        setLoadingObjects(false);
+      }
+    };
+    loadObjectTypes();
+  }, []);
+
+  // Обработчик выбора объекта из списка
+  const handleObjectSelect = (option) => {
+    setSelectedObject(option.id);
+    setObjectInputValue(option.name);
+    // Сбрасываем элемент и блоки при смене объекта
+    setSelectedElement(null);
+    setElementInputValue('');
+    setBlocks([]);
+    setParamValues({});
+    setObjectType(null);
+  };
+
+  // Обработчик ввода в поле объекта
+  const handleObjectInputChange = (value) => {
+    setObjectInputValue(value);
+    // Если ввели что-то отличное от выбранного, сбрасываем selectedObject
+    const matchingOption = objectTypes.find(opt => opt.name === value);
+    if (matchingOption) {
+      setSelectedObject(matchingOption.id);
+    } else {
+      setSelectedObject(null);
+    }
+  };
+
+  // Обработчик выбора элемента из списка
+  const handleElementSelect = (option) => {
+    setSelectedElement(option.id);
+    setElementInputValue(option.name);
+  };
+
+  // Обработчик ввода в поле элемента
+  const handleElementInputChange = (value) => {
+    setElementInputValue(value);
+    const matchingOption = elements.find(opt => opt.name === value);
+    if (matchingOption) {
+      setSelectedElement(matchingOption.id);
+    } else {
+      setSelectedElement(null);
+    }
+  };
+
+  // Загрузка элементов при выборе типа объекта
+  useEffect(() => {
+    if (!selectedObject) {
+      setElements([]);
+      return;
+    }
+
+    const loadElements = async () => {
+      setLoadingElements(true);
+      try {
+        const elems = await api.getElements(parseInt(selectedObject));
+        setElements(elems);
+      } catch (error) {
+        console.error('Ошибка загрузки элементов:', error);
+        setElements([]);
+      } finally {
+        setLoadingElements(false);
+      }
+    };
+    loadElements();
+  }, [selectedObject]);
+
+  // Загрузка блоков с параметрами при выборе ЭЛЕМЕНТА (объекта контроля)
+  useEffect(() => {
+    if (!selectedElement) {
+      setBlocks([]);
+      setParamValues({});
+      setObjectType(null);
+      return;
+    }
+
+    const loadElementData = async () => {
+      setLoadingBlocks(true);
+      try {
+        console.log('Загружаем параметры для элемента ID:', selectedElement, 'тип:', typeof selectedElement);
+        const data = await api.getElementParamsWithValues(selectedElement);
+        console.log('Данные от API:', data);
+        setBlocks(data.blocks || []);
+        setObjectType(data.type);
+
+        // Инициализируем значения параметров из загруженных данных
+        const initialValues = {};
+        (data.blocks || []).forEach(block => {
+          block.params.forEach(param => {
+            const val = param.value;
+            
+            // Пустое или null значение
+            if (val === null || val === undefined) {
+              initialValues[param.id] = '';
+              return;
+            }
+            
+            // Массив стандартных значений - оставляем пустым (выбор будет из подсказок)
+            if (Array.isArray(val)) {
+              initialValues[param.id] = '';
+              return;
+            }
+            
+            // Объект с id и name (например для объекта контроля)
+            if (typeof val === 'object' && val !== null) {
+              if (val.name !== undefined) {
+                initialValues[param.id] = String(val.name);
+              } else if (val.id !== undefined) {
+                initialValues[param.id] = String(val.id);
+              } else {
+                // Это словарь { "1": "значение1", ... } - оставляем пустым для выбора
+                initialValues[param.id] = '';
+              }
+              return;
+            }
+            
+            // Простое значение (строка, число)
+            initialValues[param.id] = String(val);
+          });
+        });
+        setParamValues(initialValues);
+      } catch (error) {
+        console.error('Ошибка загрузки данных элемента:', error);
+        setBlocks([]);
+        setParamValues({});
+      } finally {
+        setLoadingBlocks(false);
+      }
+    };
+    loadElementData();
+  }, [selectedElement]);
+
+  // Обработчик изменения значения параметра
+  const handleParamChange = (paramId, value) => {
+    setParamValues(prev => ({
+      ...prev,
+      [paramId]: value
+    }));
+  };
+
+  // Получение стандартных значений для параметра
+  const getStandardValuesForParam = (param) => {
+    const val = param.value;
+    
+    // Если value - массив, это стандартные значения
+    if (Array.isArray(val)) {
+      return val.map(v => {
+        // Если элемент массива - объект с name, возвращаем name
+        if (typeof v === 'object' && v !== null && v.name !== undefined) {
+          return String(v.name);
+        }
+        return String(v);
+      });
+    }
+    
+    // Если value - объект-словарь { "1": "value1", "2": "value2" }, возвращаем значения
+    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      // Проверяем, не является ли это объектом с id/name (выбранное значение)
+      if (val.id !== undefined && val.name !== undefined) {
+        return []; // Это выбранное значение, не список
+      }
+      // Это словарь вариантов - возвращаем значения
+      return Object.values(val).map(v => String(v));
+    }
+    
+    return [];
+  };
+
+  // Функции для кастомных полей
+  const addCustomField = () => {
+    setCustomFields(prev => [
+      ...prev,
+      { id: nextCustomFieldId, name: '', value: '' }
+    ]);
+    setNextCustomFieldId(prev => prev + 1);
+  };
+
+  const updateCustomField = (id, field, value) => {
+    setCustomFields(prev =>
+      prev.map(f => f.id === id ? { ...f, [field]: value } : f)
+    );
+  };
+
+  const deleteCustomField = (id) => {
+    setCustomFields(prev => prev.filter(f => f.id !== id));
+  };
+
+  const getObjectName = () => {
+    return objectInputValue || '';
+  };
+
+  const getElementName = () => {
+    return elementInputValue || '';
+  };
+
+  // Определяем тип данных параметра по значению
+  const getParamTypeData = (param) => {
+    if (Array.isArray(param.value) && param.value.length > 0) {
+      const firstVal = param.value[0];
+      if (typeof firstVal === 'number') {
+        return Number.isInteger(firstVal) ? 'int' : 'double';
+      }
+      if (typeof firstVal === 'boolean') return 'bool';
+    }
+    if (typeof param.value === 'number') {
+      return Number.isInteger(param.value) ? 'int' : 'double';
+    }
+    if (typeof param.value === 'boolean') return 'bool';
+    return 'string';
+  };
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    
+    try {
+      // Формируем payload для бэкенда
+      const techCardPayload = buildTechCardPayload(objectType, blocks, paramValues);
+      
+      // Добавляем кастомные поля в первый блок
+      const filledCustomFields = customFields.filter(f => f.name.trim() || f.value.trim());
+      if (filledCustomFields.length > 0 && techCardPayload.params['1']) {
+        filledCustomFields.forEach((field, idx) => {
+          const customId = `custom_${idx + 1}`;
+          techCardPayload.params['1'].params[customId] = {
+            name: field.name,
+            val: field.value
+          };
+        });
+      }
+
+      console.log('═══════════════════════════════════════════════════');
+      console.log('        ОТПРАВКА НА БЭКЕНД');
+      console.log('═══════════════════════════════════════════════════');
+      console.log(JSON.stringify(techCardPayload, null, 2));
+
+      // Отправляем на бэкенд для обработки через PipeLine
+      const result = await updateTechCard(techCardPayload);
+
+      console.log('═══════════════════════════════════════════════════');
+      console.log('        РЕЗУЛЬТАТ ОБРАБОТКИ');
+      console.log('═══════════════════════════════════════════════════');
+      console.log(JSON.stringify(result, null, 2));
+      console.log('═══════════════════════════════════════════════════');
+
+      // Обновляем блоки с результатом от PipeLine
+      if (result.blocks && result.blocks.length > 0) {
+        setBlocks(result.blocks);
+        
+        // Обновляем значения параметров
+        const newValues = {};
+        result.blocks.forEach(block => {
+          block.params.forEach(param => {
+            if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
+              newValues[param.id] = String(param.value);
+            } else if (param.value && typeof param.value === 'object' && param.value.name) {
+              newValues[param.id] = param.value.name;
+            } else {
+              newValues[param.id] = paramValues[param.id] || '';
+            }
+          });
+        });
+        setParamValues(newValues);
+      }
+
+      alert('Карта успешно обработана!');
+    } catch (error) {
+      console.error('Ошибка обработки карты:', error);
+      alert('Ошибка при обработке карты: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const isFormValid = () => {
+    const hasObject = objectInputValue.trim();
+    const hasElement = elementInputValue.trim();
+
+    // Проверяем валидацию всех полей в блоках
+    let allParamsValid = true;
+    blocks.forEach(block => {
+      block.params.forEach(param => {
+        const value = paramValues[param.id] || '';
+        const typeData = getParamTypeData(param);
+        const validation = validateByType(value, typeData);
+        if (!validation.isValid) {
+          allParamsValid = false;
+        }
+      });
+    });
+
+    return hasObject && hasElement && allParamsValid;
+  };
+
+  const hasSelectedObject = objectInputValue.trim();
+
+  return (
+    <div className="bg-[#21262F] rounded-2xl p-6 md:p-8">
+      <h2 className="text-2xl font-bold text-white mb-6 pb-4 border-b border-[#646C89]/30">
+        Технологическая карта
+      </h2>
+
+      <div className="space-y-6">
+        {/* Секция 1: Выбор объекта */}
+        <div className="bg-[#0C1515]/50 rounded-xl p-5">
+          <h3 className="text-[#0084FF] font-semibold mb-4">1. Объект контроля</h3>
+          <ComboBoxField
+            label="Тип объекта"
+            value={selectedObject}
+            inputValue={objectInputValue}
+            options={objectTypes}
+            onChange={handleObjectSelect}
+            onInputChange={handleObjectInputChange}
+            loading={loadingObjects}
+            placeholder="Выберите или введите тип объекта"
+          />
+        </div>
+
+        {/* Секция 2: Выбор элемента */}
+        <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
+          <h3 className="text-[#FFFB78] font-semibold mb-4">2. Элемент контроля</h3>
+          <ComboBoxField
+            label="Тип элемента"
+            value={selectedElement}
+            inputValue={elementInputValue}
+            options={elements}
+            onChange={handleElementSelect}
+            onInputChange={handleElementInputChange}
+            loading={loadingElements}
+            placeholder={selectedObject ? "Выберите или введите элемент" : "Введите элемент контроля"}
+            disabled={!hasSelectedObject}
+          />
+        </div>
+
+        {/* Секция 3: Блоки с параметрами */}
+        {loadingBlocks ? (
+          <div className="bg-[#0C1515]/50 rounded-xl p-5">
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={32} className="animate-spin text-[#0084FF]" />
+              <span className="ml-3 text-[#646C89]">Загрузка параметров...</span>
+            </div>
+          </div>
+        ) : blocks.length > 0 ? (
+          blocks.map((block, blockIndex) => (
+            <div key={block.id} className="bg-[#0C1515]/50 rounded-xl p-5">
+              <h3 className={`font-semibold mb-4 ${blockIndex % 2 === 0 ? 'text-[#0084FF]' : 'text-[#FFFB78]'}`}>
+                {blockIndex + 3}. {block.name}
+              </h3>
+              
+              {block.params.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {block.params.map(param => {
+                    // Пропускаем параметр "Объект контроля" - он уже выбран выше
+                    if (param.name === "Объект контроля") {
+                      return (
+                        <div key={param.id} className="md:col-span-2">
+                          <label className="block text-[#646C89] text-sm font-medium mb-2">
+                            {param.name}
+                          </label>
+                          <div className="bg-[#0C1515] border border-[#646C89]/50 rounded-lg px-4 py-3 text-white">
+                            {param.value?.name || paramValues[param.id] || elementInputValue || '—'}
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <InputWithSuggestions
+                        key={param.id}
+                        label={param.name}
+                        value={paramValues[param.id] || ''}
+                        onChange={(val) => handleParamChange(param.id, val)}
+                        standardValues={getStandardValuesForParam(param)}
+                        loading={false}
+                        placeholder="Введите или выберите значение"
+                        typeData={getParamTypeData(param)}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
+              )}
+            </div>
+          ))
+        ) : selectedElement ? (
+          <div className="bg-[#0C1515]/50 rounded-xl p-5">
+            <h3 className="text-[#0084FF] font-semibold mb-4">3. Параметры</h3>
+            <p className="text-[#646C89] text-center py-4">Нет доступных параметров для этого элемента</p>
+          </div>
+        ) : (
+          <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
+            <h3 className="text-[#0084FF] font-semibold mb-4">3. Параметры</h3>
+            <p className="text-[#646C89] text-center py-4">
+              {hasSelectedObject ? 'Выберите элемент контроля для загрузки параметров' : 'Сначала выберите тип объекта'}
+            </p>
+          </div>
+        )}
+
+        {/* Секция: Дополнительные поля (кастомные) */}
+        <div className="bg-[#0C1515]/50 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[#FFFB78] font-semibold">
+              {blocks.length + 3}. Дополнительные поля
+            </h3>
+            <button
+              type="button"
+              onClick={addCustomField}
+              className="
+                flex items-center gap-2
+                px-4 py-2
+                bg-[#0084FF]/20 hover:bg-[#0084FF]/30
+                text-[#0084FF]
+                rounded-lg
+                transition-colors
+                text-sm font-medium
+              "
+            >
+              <Plus size={18} />
+              Добавить поле
+            </button>
+          </div>
+
+          {customFields.length > 0 ? (
+            <div className="space-y-4">
+              {customFields.map(field => (
+                <CustomField
+                  key={field.id}
+                  field={field}
+                  onUpdate={updateCustomField}
+                  onDelete={deleteCustomField}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-[#646C89] text-center py-4">
+              Нажмите "Добавить поле" чтобы создать дополнительные параметры
+            </p>
+          )}
+        </div>
+
+        {/* Секция: Загрузка изображений */}
+        <div className="bg-[#0C1515]/50 rounded-xl p-5">
+          <h3 className="text-[#0084FF] font-semibold mb-4">
+            {blocks.length + 4}. Снимки
+          </h3>
+          <ImageUpload
+            images={uploadedImages}
+            onImagesChange={setUploadedImages}
+          />
+        </div>
+
+        {/* Кнопка отправки */}
+        <div className="pt-4">
+          <button
+            onClick={handleSubmit}
+            disabled={!isFormValid() || isSubmitting}
+            className={`
+              w-full flex items-center justify-center gap-3
+              py-4 rounded-xl font-semibold text-lg
+              transition-all
+              ${isFormValid() && !isSubmitting
+                ? 'bg-[#0084FF] hover:bg-[#0084FF]/80 text-white shadow-lg hover:shadow-[#0084FF]/20'
+                : 'bg-[#646C89]/30 text-[#646C89] cursor-not-allowed'
+              }
+            `}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 size={24} className="animate-spin" />
+                Обработка...
+              </>
+            ) : (
+              <>
+                <FileCheck size={24} />
+                Сформировать карту
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TechCardForm;
