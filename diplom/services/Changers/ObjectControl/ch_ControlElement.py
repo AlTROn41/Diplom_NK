@@ -24,7 +24,7 @@ class ControlElement(IDataChanger):
             with open(image_path, "rb") as f:
                 image_bytes = f.read()
 
-            #param2['image']=base64.b64encode(image_bytes).decode('utf-8')
+            param2['image']=base64.b64encode(image_bytes).decode('utf-8')
         elif (data.type=="труба"):
             param={
                 "name":"Контролируемый элемент",

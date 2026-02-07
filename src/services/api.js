@@ -111,6 +111,7 @@ function transformBlocksResponse(data) {
           id: paramId,
           name: param.name || `Параметр ${paramId}`,
           value: param.val,
+          image: param.image || null,
           blockId: blockId,
           blockName: block.name
         };

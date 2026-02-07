@@ -602,18 +602,20 @@ const TechCardForm = () => {
       if (result.blocks && result.blocks.length > 0) {
         setBlocks(result.blocks);
         
-        // Обновляем значения параметров, сохраняя введённые пользователем
+        // Обновляем значения параметров, сохраняя ВСЕ введённые пользователем значения
         const newValues = { ...updatedValues };
         result.blocks.forEach(block => {
           block.params.forEach(param => {
             const key = `${block.id}.${param.id}`;
-            // Если пользователь уже ввёл значение, не перезаписываем
-            if (newValues[key] === undefined || newValues[key] === '') {
-              if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
-                newValues[key] = String(param.value);
-              } else if (param.value && typeof param.value === 'object' && param.value.name) {
-                newValues[key] = param.value.name;
-              }
+            // Пропускаем параметры, которые пользователь уже редактировал (включая пустые!)
+            if (key in updatedValues) {
+              return; // Сохраняем значение пользователя (даже если пустое)
+            }
+            // Заполняем только новые параметры, которых не было
+            if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
+              newValues[key] = String(param.value);
+            } else if (param.value && typeof param.value === 'object' && param.value.name) {
+              newValues[key] = param.value.name;
             }
           });
         });
@@ -888,6 +890,36 @@ const TechCardForm = () => {
                       <tbody>
                         {block.params.map(param => {
                           const compositeKey = `${block.id}.${param.id}`;
+                          
+                          // Если параметр содержит изображение
+                          if (param.image || (param.value && typeof param.value === 'object' && param.value.image)) {
+                            let imageSrc = param.image || param.value.image;
+                            
+                            // Если это base64 без префикса data:image, добавляем его
+                            if (imageSrc && !imageSrc.startsWith('data:') && !imageSrc.startsWith('http')) {
+                              // Определяем тип изображения (по умолчанию png)
+                              imageSrc = `data:image/png;base64,${imageSrc}`;
+                            }
+                            
+                            return (
+                              <tr key={compositeKey} className="border-b border-[#646C89]/20">
+                                <td colSpan={2} className="py-4 px-2">
+                                  <div className="text-white text-sm mb-2">
+                                    <span className="text-[#0084FF] font-mono mr-2">{compositeKey}</span>
+                                    {param.name}
+                                  </div>
+                                  <div className="flex justify-center">
+                                    <img 
+                                      src={imageSrc} 
+                                      alt={param.name}
+                                      className="max-w-full max-h-96 rounded-lg border border-[#646C89]/30"
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          
                           return (
                             <TableRowInput
                               key={compositeKey}
