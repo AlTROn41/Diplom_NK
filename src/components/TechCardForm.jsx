@@ -528,38 +528,40 @@ const TechCardForm = () => {
         setObjectType(data.type);
 
         // Инициализируем значения параметров из загруженных данных
+        // Используем составной ключ blockId.paramId для уникальности
         const initialValues = {};
         (data.blocks || []).forEach(block => {
           block.params.forEach(param => {
+            const compositeKey = `${block.id}.${param.id}`;
             const val = param.value;
             
             // Пустое или null значение
             if (val === null || val === undefined) {
-              initialValues[param.id] = '';
+              initialValues[compositeKey] = '';
               return;
             }
             
             // Массив стандартных значений - оставляем пустым (выбор будет из подсказок)
             if (Array.isArray(val)) {
-              initialValues[param.id] = '';
+              initialValues[compositeKey] = '';
               return;
             }
             
             // Объект с id и name (например для объекта контроля)
             if (typeof val === 'object' && val !== null) {
               if (val.name !== undefined) {
-                initialValues[param.id] = String(val.name);
+                initialValues[compositeKey] = String(val.name);
               } else if (val.id !== undefined) {
-                initialValues[param.id] = String(val.id);
+                initialValues[compositeKey] = String(val.id);
               } else {
                 // Это словарь { "1": "значение1", ... } - оставляем пустым для выбора
-                initialValues[param.id] = '';
+                initialValues[compositeKey] = '';
               }
               return;
             }
             
             // Простое значение (строка, число)
-            initialValues[param.id] = String(val);
+            initialValues[compositeKey] = String(val);
           });
         });
         setParamValues(initialValues);
@@ -575,15 +577,95 @@ const TechCardForm = () => {
   }, [selectedElement]);
 
   // Обработчик изменения значения параметра
-  const handleParamChange = (paramId, value) => {
-    setParamValues(prev => ({
-      ...prev,
-      [paramId]: value
-    }));
+  const handleParamChange = async (compositeKey, value) => {
+    // Обновляем локальное состояние
+    const updatedValues = {
+      ...paramValues,
+      [compositeKey]: value
+    };
+    setParamValues(updatedValues);
+
+    // Отправляем обновлённые данные на бэкенд
+    try {
+      // Формируем payload для бэкенда
+      const techCardPayload = buildTechCardPayload(objectType, blocks, updatedValues);
+      
+      console.log('Отправка изменения на бэкенд:', compositeKey, '=', value);
+      console.log('Payload:', JSON.stringify(techCardPayload, null, 2));
+      
+      // Отправляем запрос updateTechCard
+      const result = await updateTechCard(techCardPayload);
+      
+      console.log('Ответ от бэкенда:', result);
+      
+      // Если бэкенд вернул обновлённые блоки, обновляем их
+      if (result.blocks && result.blocks.length > 0) {
+        setBlocks(result.blocks);
+        
+        // Обновляем значения параметров, сохраняя введённые пользователем
+        const newValues = { ...updatedValues };
+        result.blocks.forEach(block => {
+          block.params.forEach(param => {
+            const key = `${block.id}.${param.id}`;
+            // Если пользователь уже ввёл значение, не перезаписываем
+            if (newValues[key] === undefined || newValues[key] === '') {
+              if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
+                newValues[key] = String(param.value);
+              } else if (param.value && typeof param.value === 'object' && param.value.name) {
+                newValues[key] = param.value.name;
+              }
+            }
+          });
+        });
+        setParamValues(newValues);
+      }
+    } catch (error) {
+      console.error('Ошибка при обновлении параметра:', error);
+    }
   };
 
-  // Получение стандартных значений для параметра
-  const getStandardValuesForParam = (param) => {
+  // Кэш стандартных значений для параметров (сохраняем при первой загрузке)
+  const [standardValuesCache, setStandardValuesCache] = useState({});
+
+  // Сохраняем стандартные значения при загрузке блоков
+  useEffect(() => {
+    if (blocks.length > 0) {
+      const cache = { ...standardValuesCache };
+      blocks.forEach(block => {
+        block.params.forEach(param => {
+          const compositeKey = `${block.id}.${param.id}`;
+          const val = param.value;
+          
+          // Сохраняем только если это массив или словарь (стандартные значения)
+          if (Array.isArray(val) && val.length > 0) {
+            cache[compositeKey] = val.map(v => {
+              if (typeof v === 'object' && v !== null && v.name !== undefined) {
+                return String(v.name);
+              }
+              return String(v);
+            });
+          } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            // Проверяем, не является ли это объектом с id/name (выбранное значение)
+            if (!(val.id !== undefined && val.name !== undefined)) {
+              // Это словарь вариантов
+              cache[compositeKey] = Object.values(val).map(v => String(v));
+            }
+          }
+        });
+      });
+      setStandardValuesCache(cache);
+    }
+  }, [blocks]);
+
+  // Получение стандартных значений для параметра (из кэша или из param.value)
+  const getStandardValuesForParam = (param, blockId) => {
+    const compositeKey = `${blockId}.${param.id}`;
+    
+    // Сначала проверяем кэш
+    if (standardValuesCache[compositeKey] && standardValuesCache[compositeKey].length > 0) {
+      return standardValuesCache[compositeKey];
+    }
+    
     const val = param.value;
     
     // Если value - массив, это стандартные значения
@@ -652,16 +734,17 @@ const TechCardForm = () => {
       if (result.blocks && result.blocks.length > 0) {
         setBlocks(result.blocks);
         
-        // Обновляем значения параметров
+        // Обновляем значения параметров с составным ключом
         const newValues = {};
         result.blocks.forEach(block => {
           block.params.forEach(param => {
+            const compositeKey = `${block.id}.${param.id}`;
             if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
-              newValues[param.id] = String(param.value);
+              newValues[compositeKey] = String(param.value);
             } else if (param.value && typeof param.value === 'object' && param.value.name) {
-              newValues[param.id] = param.value.name;
+              newValues[compositeKey] = param.value.name;
             } else {
-              newValues[param.id] = paramValues[param.id] || '';
+              newValues[compositeKey] = paramValues[compositeKey] || '';
             }
           });
         });
@@ -685,7 +768,8 @@ const TechCardForm = () => {
     let allParamsValid = true;
     blocks.forEach(block => {
       block.params.forEach(param => {
-        const value = paramValues[param.id] || '';
+        const compositeKey = `${block.id}.${param.id}`;
+        const value = paramValues[compositeKey] || '';
         const typeData = getParamTypeData(param);
         const validation = validateByType(value, typeData);
         if (!validation.isValid) {
@@ -802,17 +886,20 @@ const TechCardForm = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {block.params.map(param => (
-                          <TableRowInput
-                            key={param.id}
-                            paramKey={`${block.id}.${param.id}`}
-                            paramName={param.name}
-                            value={paramValues[param.id] || ''}
-                            onChange={(val) => handleParamChange(param.id, val)}
-                            standardValues={getStandardValuesForParam(param)}
-                            typeData={getParamTypeData(param)}
-                          />
-                        ))}
+                        {block.params.map(param => {
+                          const compositeKey = `${block.id}.${param.id}`;
+                          return (
+                            <TableRowInput
+                              key={compositeKey}
+                              paramKey={compositeKey}
+                              paramName={param.name}
+                              value={paramValues[compositeKey] || ''}
+                              onChange={(val) => handleParamChange(compositeKey, val)}
+                              standardValues={getStandardValuesForParam(param, block.id)}
+                              typeData={getParamTypeData(param)}
+                            />
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

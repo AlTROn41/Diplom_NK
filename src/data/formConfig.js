@@ -166,7 +166,7 @@ export const updateTechCard = async (techCardData) => {
  * Формирует структуру TechCardData для отправки на бэкенд
  * @param {string} type - тип объекта контроля ("пластина" или "труба")
  * @param {Array} blocks - массив блоков с параметрами
- * @param {object} paramValues - значения параметров { paramId: value }
+ * @param {object} paramValues - значения параметров { compositeKey: value } где compositeKey = blockId.paramId
  */
 export const buildTechCardPayload = (type, blocks, paramValues) => {
   const params = {};
@@ -178,9 +178,13 @@ export const buildTechCardPayload = (type, blocks, paramValues) => {
     };
 
     block.params.forEach(param => {
+      // Используем составной ключ для получения значения
+      const compositeKey = `${block.id}.${param.id}`;
+      const value = paramValues[compositeKey];
+      
       params[block.id].params[param.id] = {
         name: param.name,
-        val: paramValues[param.id] !== undefined ? paramValues[param.id] : param.value
+        val: value !== undefined && value !== '' ? value : param.value
       };
     });
   });
