@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Loader2, FileCheck, CheckCircle, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, FileCheck, CheckCircle, AlertCircle, Plus, Trash2, Image, X } from 'lucide-react';
 import api from '../services/api';
 import { buildTechCardPayload, updateTechCard } from '../data/formConfig';
 
@@ -436,6 +436,82 @@ const TechCardForm = () => {
 
   // Состояние свёрнутых/развёрнутых блоков { blockId: true/false }
   const [collapsedBlocks, setCollapsedBlocks] = useState({});
+
+  // Дополнительные пользовательские поля { blockId: [{id, name, value}, ...] }
+  const [customFields, setCustomFields] = useState({});
+  const [nextCustomFieldId, setNextCustomFieldId] = useState(1);
+
+  // Добавление пользовательского поля в блок
+  const addCustomField = (blockId) => {
+    setCustomFields(prev => ({
+      ...prev,
+      [blockId]: [
+        ...(prev[blockId] || []),
+        { id: `custom_${nextCustomFieldId}`, name: '', value: '' }
+      ]
+    }));
+    setNextCustomFieldId(prev => prev + 1);
+  };
+
+  // Обновление пользовательского поля
+  const updateCustomField = (blockId, fieldId, field, value) => {
+    setCustomFields(prev => ({
+      ...prev,
+      [blockId]: (prev[blockId] || []).map(f => 
+        f.id === fieldId ? { ...f, [field]: value } : f
+      )
+    }));
+  };
+
+  // Удаление пользовательского поля
+  const deleteCustomField = (blockId, fieldId) => {
+    setCustomFields(prev => ({
+      ...prev,
+      [blockId]: (prev[blockId] || []).filter(f => f.id !== fieldId)
+    }));
+  };
+
+  // Загруженные изображения { blockId: [{id, file, preview, name}, ...] }
+  const [uploadedImages, setUploadedImages] = useState({});
+  const [nextImageId, setNextImageId] = useState(1);
+
+  // Обработчик загрузки изображения
+  const handleImageUpload = (blockId, event) => {
+    const files = Array.from(event.target.files);
+    
+    files.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setUploadedImages(prev => ({
+            ...prev,
+            [blockId]: [
+              ...(prev[blockId] || []),
+              {
+                id: `img_${nextImageId}`,
+                file: file,
+                preview: e.target.result,
+                name: file.name
+              }
+            ]
+          }));
+          setNextImageId(prev => prev + 1);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    
+    // Сбрасываем input для возможности повторной загрузки того же файла
+    event.target.value = '';
+  };
+
+  // Удаление изображения
+  const deleteImage = (blockId, imageId) => {
+    setUploadedImages(prev => ({
+      ...prev,
+      [blockId]: (prev[blockId] || []).filter(img => img.id !== imageId)
+    }));
+  };
 
   // Функция переключения сворачивания блока
   const toggleBlockCollapse = (blockId) => {
@@ -1058,6 +1134,99 @@ const TechCardForm = () => {
                     ) : (
                       <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
                     )}
+
+                    {/* Пользовательские дополнительные поля */}
+                    {(customFields[block.id] || []).length > 0 && (
+                      <div className="mt-4 border-t border-[#646C89]/30 pt-4">
+                        <p className="text-xs text-[#646C89] mb-2">Дополнительные поля:</p>
+                        <div className="space-y-2">
+                          {customFields[block.id].map(field => (
+                            <div key={field.id} className="flex gap-2 items-start">
+                              <input
+                                type="text"
+                                value={field.name}
+                                onChange={(e) => updateCustomField(block.id, field.id, 'name', e.target.value)}
+                                placeholder="Название поля"
+                                className="flex-1 bg-[#0C1515] border border-[#646C89]/50 rounded px-3 py-1.5 text-white text-sm placeholder-[#646C89] focus:outline-none focus:border-[#0084FF]"
+                              />
+                              <input
+                                type="text"
+                                value={field.value}
+                                onChange={(e) => updateCustomField(block.id, field.id, 'value', e.target.value)}
+                                placeholder="Значение"
+                                className="flex-1 bg-[#0C1515] border border-[#646C89]/50 rounded px-3 py-1.5 text-white text-sm placeholder-[#646C89] focus:outline-none focus:border-[#0084FF]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => deleteCustomField(block.id, field.id)}
+                                className="p-1.5 text-[#646C89] hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                                title="Удалить поле"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Загруженные пользователем изображения */}
+                    {(uploadedImages[block.id] || []).length > 0 && (
+                      <div className="mt-4 border-t border-[#646C89]/30 pt-4">
+                        <p className="text-xs text-[#646C89] mb-2">Загруженные изображения:</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {uploadedImages[block.id].map(img => (
+                            <div key={img.id} className="relative group">
+                              <img
+                                src={img.preview}
+                                alt={img.name}
+                                className="w-full h-32 object-cover rounded-lg border border-[#646C89]/30"
+                              />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteImage(block.id, img.id)}
+                                  className="p-2 bg-red-500 hover:bg-red-600 rounded-full text-white transition-colors"
+                                  title="Удалить изображение"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                              <p className="text-xs text-[#646C89] mt-1 truncate" title={img.name}>
+                                {img.name}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Кнопки добавления поля и изображения */}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addCustomField(block.id);
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 text-[#0084FF] hover:bg-[#0084FF]/10 rounded-lg transition-colors text-sm"
+                      >
+                        <Plus size={16} />
+                        Добавить поле
+                      </button>
+                      
+                      <label className="flex items-center gap-2 px-3 py-1.5 text-[#0084FF] hover:bg-[#0084FF]/10 rounded-lg transition-colors text-sm cursor-pointer">
+                        <Image size={16} />
+                        Добавить фото
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={(e) => handleImageUpload(block.id, e)}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>
