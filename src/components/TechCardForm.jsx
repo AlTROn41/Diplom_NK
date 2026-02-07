@@ -171,7 +171,129 @@ const getTypeHint = (typeData) => {
   }
 };
 
+// Компонент строки таблицы с полем ввода
+const TableRowInput = ({ paramKey, paramName, value, onChange, standardValues, typeData }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const textareaRef = React.useRef(null);
+
+  const validation = validateByType(value, typeData);
+  const showError = touched && !validation.isValid;
+  const typeHint = getTypeHint(typeData);
+
+  // Автоматическое подгонка textarea по высоте текста
+  const adjustHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '0px';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  };
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value]);
+
+  // Подгонка при первом рендере
+  useEffect(() => {
+    adjustHeight();
+  }, []);
+
+  const handleChange = (newValue) => {
+    const normalizedType = (typeData || 'string').toLowerCase();
+
+    if (normalizedType === 'int' || normalizedType === 'integer') {
+      if (newValue !== '' && !/^-?\d*$/.test(newValue)) {
+        return;
+      }
+    } else if (['double', 'float', 'real'].includes(normalizedType)) {
+      if (newValue !== '' && !/^-?\d*[.,]?\d*$/.test(newValue)) {
+        return;
+      }
+    }
+
+    onChange(newValue);
+  };
+
+  const handleBlur = () => {
+    setTouched(true);
+  };
+
+  return (
+    <tr className="border-b border-[#646C89]/20 hover:bg-[#646C89]/10">
+      <td className="py-2 px-2 text-white text-sm align-top" style={{ width: '300px', minWidth: '300px', maxWidth: '300px' }}>
+        <span className="text-[#0084FF] font-mono mr-2">{paramKey}</span>
+        {paramName}
+        {typeHint && <span className="ml-1 text-xs text-[#646C89]">({typeHint})</span>}
+      </td>
+      <td className="py-2 px-2 relative align-top" style={{ width: '400px', minWidth: '400px' }}>
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="Введите значение"
+            rows={1}
+            className={`
+              w-full bg-[#0C1515] border
+              rounded px-3 py-1.5 pr-8
+              text-white placeholder-[#646C89]
+              focus:outline-none
+              transition-colors text-sm
+              resize-none
+              ${showError
+                ? 'border-red-500 focus:border-red-500'
+                : 'border-[#646C89]/50 focus:border-[#0084FF]'
+              }
+            `}
+            style={{ height: 'auto', minHeight: '28px', overflow: 'hidden', lineHeight: '1.4' }}
+          />
+          {standardValues && standardValues.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#646C89] hover:text-[#0084FF]"
+            >
+              <ChevronDown size={16} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
+        
+        {showError && (
+          <span className="text-xs text-red-500 mt-0.5 block">{validation.error}</span>
+        )}
+
+        {isOpen && standardValues && standardValues.length > 0 && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+            <div className="absolute top-full right-0 w-56 mt-1 bg-[#0C1515] border border-[#646C89] rounded-lg shadow-lg z-50 max-h-40 overflow-y-auto">
+              <div className="p-2 border-b border-[#646C89]/30">
+                <span className="text-xs text-[#646C89]">Стандартные значения:</span>
+              </div>
+              {standardValues.map((val, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    onChange(val.toString());
+                    setIsOpen(false);
+                    setTouched(true);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-white text-sm hover:bg-[#0084FF]/20 transition-colors"
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </td>
+    </tr>
+  );
+};
+
 // Компонент поля ввода с выпадающим списком стандартных значений и валидацией
+// Отображение в одну строку: {ключ} {название} {поле ввода}
 const InputWithSuggestions = ({ label, value, onChange, standardValues, loading, placeholder, typeData }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -205,49 +327,52 @@ const InputWithSuggestions = ({ label, value, onChange, standardValues, loading,
 
   return (
     <div className="relative">
-      <label className="block text-[#646C89] text-sm font-medium mb-2">
-        {label}
-        {typeHint && (
-          <span className="ml-2 text-xs text-[#646C89]/70">({typeHint})</span>
-        )}
-      </label>
-      <div className="relative">
-        <input
-          type={getInputType(typeData)}
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          onBlur={handleBlur}
-          placeholder={placeholder} Ф
-          className={`
-            w-full bg-[#0C1515] border
-            rounded-lg px-4 py-3 pr-10
-            text-white placeholder-[#646C89]
-            focus:outline-none
-            transition-colors
-            ${showError
-              ? 'border-red-500 focus:border-red-500'
-              : 'border-[#646C89] focus:border-[#0084FF]'
-            }
-          `}
-        />
-        {loading ? (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Loader2 size={18} className="animate-spin text-[#646C89]" />
-          </div>
-        ) : standardValues && standardValues.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setIsOpen(!isOpen)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#646C89] hover:text-[#0084FF]"
-          >
-            <ChevronDown size={18} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </button>
-        ) : null}
+      {/* Одна строка: label + input */}
+      <div className="flex items-center gap-4">
+        <label className="text-[#646C89] text-sm font-medium whitespace-nowrap flex-shrink-0">
+          {label}
+          {typeHint && (
+            <span className="ml-1 text-xs text-[#646C89]/70">({typeHint})</span>
+          )}
+        </label>
+        <div className="relative flex-1">
+          <input
+            type={getInputType(typeData)}
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder={placeholder}
+            className={`
+              w-full bg-[#0C1515] border
+              rounded-lg px-4 py-2 pr-10
+              text-white placeholder-[#646C89]
+              focus:outline-none
+              transition-colors
+              ${showError
+                ? 'border-red-500 focus:border-red-500'
+                : 'border-[#646C89] focus:border-[#0084FF]'
+              }
+            `}
+          />
+          {loading ? (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Loader2 size={18} className="animate-spin text-[#646C89]" />
+            </div>
+          ) : standardValues && standardValues.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#646C89] hover:text-[#0084FF]"
+            >
+              <ChevronDown size={18} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* Сообщение об ошибке */}
       {showError && (
-        <span className="text-xs text-red-500 mt-1 block">
+        <span className="text-xs text-red-500 mt-1 block pl-4">
           {validation.error}
         </span>
       )}
@@ -255,7 +380,7 @@ const InputWithSuggestions = ({ label, value, onChange, standardValues, loading,
       {isOpen && standardValues && standardValues.length > 0 && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 right-0 mt-1 bg-[#0C1515] border border-[#646C89] rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+          <div className="absolute top-full right-0 w-64 mt-1 bg-[#0C1515] border border-[#646C89] rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
             <div className="p-2 border-b border-[#646C89]/30">
               <span className="text-xs text-[#646C89]">Стандартные значения:</span>
             </div>
@@ -275,12 +400,6 @@ const InputWithSuggestions = ({ label, value, onChange, standardValues, loading,
             ))}
           </div>
         </>
-      )}
-
-      {!loading && !showError && standardValues && standardValues.length > 0 && (
-        <span className="text-xs text-[#646C89] mt-1 block">
-          {standardValues.length} стандартных значений
-        </span>
       )}
     </div>
   );
@@ -674,19 +793,28 @@ const TechCardForm = () => {
                 </h3>
                 
                 {block.params.length > 0 ? (
-                  <div className="space-y-4">
-                    {block.params.map(param => (
-                      <InputWithSuggestions
-                        key={param.id}
-                        label={`${block.id}.${param.id} ${param.name}`}
-                        value={paramValues[param.id] || ''}
-                        onChange={(val) => handleParamChange(param.id, val)}
-                        standardValues={getStandardValuesForParam(param)}
-                        loading={false}
-                        placeholder="Введите или выберите значение"
-                        typeData={getParamTypeData(param)}
-                      />
-                    ))}
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse table-auto">
+                      <thead>
+                        <tr className="border-b border-[#646C89]/30">
+                          <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2 whitespace-nowrap">Параметр</th>
+                          <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2">Значение</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {block.params.map(param => (
+                          <TableRowInput
+                            key={param.id}
+                            paramKey={`${block.id}.${param.id}`}
+                            paramName={param.name}
+                            value={paramValues[param.id] || ''}
+                            onChange={(val) => handleParamChange(param.id, val)}
+                            standardValues={getStandardValuesForParam(param)}
+                            typeData={getParamTypeData(param)}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : (
                   <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
