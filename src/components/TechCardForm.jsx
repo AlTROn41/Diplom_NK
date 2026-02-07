@@ -602,20 +602,56 @@ const TechCardForm = () => {
       if (result.blocks && result.blocks.length > 0) {
         setBlocks(result.blocks);
         
-        // Обновляем значения параметров, сохраняя ВСЕ введённые пользователем значения
+        // Обновляем кэш стандартных значений из ответа бэкенда
+        const newCache = { ...standardValuesCache };
+        result.blocks.forEach(block => {
+          block.params.forEach(param => {
+            const key = `${block.id}.${param.id}`;
+            const val = param.value;
+            
+            // Обновляем кэш если пришли новые стандартные значения
+            if (Array.isArray(val) && val.length > 0) {
+              newCache[key] = val.map(v => {
+                if (typeof v === 'object' && v !== null && v.name !== undefined) {
+                  return String(v.name);
+                }
+                return String(v);
+              });
+            } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+              // Проверяем, не является ли это объектом с id/name (выбранное значение)
+              if (!(val.id !== undefined && val.name !== undefined)) {
+                // Это словарь вариантов
+                newCache[key] = Object.values(val).map(v => String(v));
+              }
+            }
+          });
+        });
+        setStandardValuesCache(newCache);
+        
+        // Обновляем значения параметров
         const newValues = { ...updatedValues };
         result.blocks.forEach(block => {
           block.params.forEach(param => {
             const key = `${block.id}.${param.id}`;
-            // Пропускаем параметры, которые пользователь уже редактировал (включая пустые!)
-            if (key in updatedValues) {
-              return; // Сохраняем значение пользователя (даже если пустое)
-            }
-            // Заполняем только новые параметры, которых не было
+            
+            // Получаем значение от бэкенда
+            let backendValue = null;
             if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
-              newValues[key] = String(param.value);
+              backendValue = String(param.value);
             } else if (param.value && typeof param.value === 'object' && param.value.name) {
-              newValues[key] = param.value.name;
+              backendValue = param.value.name;
+            }
+            
+            // Если бэкенд прислал конкретное значение (не массив/словарь опций)
+            if (backendValue !== null) {
+              const currentValue = updatedValues[key] || '';
+              // Если значение от бэкенда отличается от текущего — перезаписываем
+              if (backendValue !== currentValue) {
+                newValues[key] = backendValue;
+              }
+            } else if (!(key in updatedValues)) {
+              // Новый параметр, которого не было — оставляем пустым
+              newValues[key] = '';
             }
           });
         });

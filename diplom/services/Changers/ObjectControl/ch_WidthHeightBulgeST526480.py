@@ -14,7 +14,7 @@ class WidthHeightBulgeST526480(IDataChanger):
         width=0
         height=0    
 
-        if('С17' in val):
+        if('С17' or 'C17' in val):
             tp=self.C17Calc(s)
             width=tp[0]
             height=tp[1]
@@ -32,8 +32,9 @@ class WidthHeightBulgeST526480(IDataChanger):
 
         return
     
-    def C17Calc(self,S)->tuple:
+    def C17Calc(self,s)->tuple:
         e=0
+        S = int(s)
         if 3 <= S <= 5:
             e= '8'
         elif 5 < S <= 8:

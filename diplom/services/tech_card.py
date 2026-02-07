@@ -152,61 +152,61 @@ class TechCardData:
 
         return False
     
-    def insert_param_to_block_reWrite(
-        self,
-        block_name: str,
-        insert_id: Union[int, str],
-        param: Dict[str, Any]
-    ) -> bool:
-        if "name" not in param:
-            raise ValueError("param должен содержать ключ 'name'")
+    # def insert_param_to_block_reWrite(
+    #     self,
+    #     block_name: str,
+    #     insert_id: Union[int, str],
+    #     param: Dict[str, Any]
+    # ) -> bool:
+    #     if "name" not in param:
+    #         raise ValueError("param должен содержать ключ 'name'")
 
-        # --- нормализация insert_id ---
-        try:
-            if isinstance(insert_id, str):
-                if "." in insert_id:
-                    raise ValueError
-                insert_id = int(insert_id)
-            else:
-                insert_id = int(insert_id)
-        except (ValueError, TypeError):
-            raise ValueError(f"insert_id должен быть целым числом, получено: {insert_id!r}")
+    #     # --- нормализация insert_id ---
+    #     try:
+    #         if isinstance(insert_id, str):
+    #             if "." in insert_id:
+    #                 raise ValueError
+    #             insert_id = int(insert_id)
+    #         else:
+    #             insert_id = int(insert_id)
+    #     except (ValueError, TypeError):
+    #         raise ValueError(f"insert_id должен быть целым числом, получено: {insert_id!r}")
 
-        for block in self.params.values():
-            if block.get("name") != block_name:
-                continue
+    #     for block in self.params.values():
+    #         if block.get("name") != block_name:
+    #             continue
 
-            params = block.setdefault("params", {})
+    #         params = block.setdefault("params", {})
 
-            # --- собираем только int-ключи ---
-            int_keys = [k for k in params.keys() if isinstance(k, int)]
+    #         # --- собираем только int-ключи ---
+    #         int_keys = [k for k in params.keys() if isinstance(k, int)]
 
-            # --- ищем параметр с тем же name ---
-            old_key = None
-            for k in int_keys:
-                if params[k].get("name") == param["name"]:
-                    old_key = k
-                    break
+    #         # --- ищем параметр с тем же name ---
+    #         old_key = None
+    #         for k in int_keys:
+    #             if params[k].get("name") == param["name"]:
+    #                 old_key = k
+    #                 break
 
-            # --- если параметр уже есть — удаляем ---
-            if old_key is not None:
-                params.pop(old_key)
-                int_keys.remove(old_key)
+    #         # --- если параметр уже есть — удаляем ---
+    #         if old_key is not None:
+    #             params.pop(old_key)
+    #             int_keys.remove(old_key)
 
-                # если удалённый был левее точки вставки — сдвигаем insert_id
-                if old_key < insert_id:
-                    insert_id -= 1
+    #             # если удалённый был левее точки вставки — сдвигаем insert_id
+    #             if old_key < insert_id:
+    #                 insert_id -= 1
 
-            # --- сдвигаем хвост вправо начиная с insert_id ---
-            for k in sorted((k for k in int_keys if k >= insert_id), reverse=True):
-                params[k + 1] = params.pop(k)
+    #         # --- сдвигаем хвост вправо начиная с insert_id ---
+    #         for k in sorted((k for k in int_keys if k >= insert_id), reverse=True):
+    #             params[k + 1] = params.pop(k)
 
-            # --- вставляем новый параметр ---
-            params[insert_id] = dict(param)
+    #         # --- вставляем новый параметр ---
+    #         params[insert_id] = dict(param)
 
-            return True
+    #         return True
 
-        return False
+    #     return False
     
     def _id_to_sort_key(self, key) -> tuple:
         """
@@ -326,3 +326,124 @@ class TechCardData:
         # иначе не массив — True
         return True
         
+
+
+
+
+
+
+
+
+
+    def insert_param_to_block_reWrite(
+    self,
+    block_name: str,
+    insert_id: Union[int, str],
+    param: Dict[str, Any]
+) -> bool:
+        if "name" not in param:
+            raise ValueError("param должен содержать ключ 'name'")
+
+        # --- нормализация insert_id ---
+        # Поддерживаем int, float и строки типа "4.2"
+        if isinstance(insert_id, (int, float)):
+            insert_id_str = str(insert_id)
+        else:
+            insert_id_str = str(insert_id)
+        
+        # Проверяем формат: должны быть только цифры и точки
+        if not all(part.isdigit() for part in insert_id_str.split('.')):
+            raise ValueError(
+                f"insert_id должен быть числом или многоуровневым числом, получено: {insert_id!r}"
+            )
+
+        # Для сравнений используем tuple из int частей
+        insert_id_tuple = tuple(int(part) for part in insert_id_str.split('.'))
+
+        for block in self.params.values():
+            if block.get("name") != block_name:
+                continue
+
+            params = block.setdefault("params", {})
+
+            # --- ищем параметр с тем же name ---
+            old_key = None
+            for k in params.keys():
+                if params[k].get("name") == param["name"]:
+                    old_key = k
+                    break
+
+            # --- если параметр уже есть — удаляем ---
+            if old_key is not None:
+                params.pop(old_key)
+                
+                # Сравниваем ключи
+                old_key_tuple = self._key_to_tuple(old_key)
+                if self._compare_tuples(old_key_tuple, insert_id_tuple) < 0:
+                    # old_key < insert_id, нужно уменьшить insert_id
+                    insert_id_tuple = self._decrement_tuple(insert_id_tuple, old_key_tuple)
+
+            # --- сдвигаем хвост вправо ---
+            keys_to_move = []
+            for k in params.keys():
+                key_tuple = self._key_to_tuple(k)
+                if self._compare_tuples(key_tuple, insert_id_tuple) >= 0:
+                    keys_to_move.append((k, key_tuple))
+            
+            # Сортируем по убыванию для правильного сдвига
+            keys_to_move.sort(key=lambda x: x[1], reverse=True)
+            
+            for old_k, old_tuple in keys_to_move:
+                new_tuple = self._increment_tuple(old_tuple, insert_id_tuple)
+                new_k = self._tuple_to_key(new_tuple)
+                params[new_k] = params.pop(old_k)
+
+            # --- вставляем новый параметр ---
+            new_key = self._tuple_to_key(insert_id_tuple)
+            params[new_key] = dict(param)
+
+            return True
+
+        return False
+
+    def _key_to_tuple(self, key: Any) -> tuple:
+        """Преобразует ключ в tuple."""
+        if isinstance(key, (int, float)):
+            return (int(key),)
+        elif isinstance(key, str):
+            return tuple(int(part) for part in key.split('.'))
+        else:
+            return (int(key),)
+
+    def _tuple_to_key(self, t: tuple) -> str:
+        """Преобразует tuple в строковый ключ."""
+        return '.'.join(str(part) for part in t)
+
+    def _compare_tuples(self, t1: tuple, t2: tuple) -> int:
+        """Сравнивает два tuple как многоуровневые числа."""
+        for a, b in zip(t1, t2):
+            if a != b:
+                return -1 if a < b else 1
+        return 0 if len(t1) == len(t2) else (-1 if len(t1) < len(t2) else 1)
+
+    def _increment_tuple(self, key_tuple: tuple, insert_tuple: tuple) -> tuple:
+        """Увеличивает key_tuple на уровне insert_tuple."""
+        result = list(key_tuple)
+        level = min(len(insert_tuple), len(key_tuple)) - 1
+        if level >= 0:
+            result[level] += 1
+            # Отрезаем хвост после увеличенного уровня
+            return tuple(result[:level + 1])
+        return key_tuple
+
+    def _decrement_tuple(self, insert_tuple: tuple, old_tuple: tuple) -> tuple:
+        """Уменьшает insert_tuple, если old_tuple был меньше."""
+        result = list(insert_tuple)
+        for level in range(min(len(insert_tuple), len(old_tuple))):
+            if old_tuple[level] < insert_tuple[level]:
+                result[level] -= 1
+                # Если стало 0 и не первый уровень - убираем
+                if result[level] == 0 and level > 0:
+                    result.pop(level)
+                break
+        return tuple(result)
