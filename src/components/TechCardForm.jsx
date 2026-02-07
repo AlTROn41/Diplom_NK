@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, Loader2, FileCheck } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, FileCheck, CheckCircle, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { buildTechCardPayload, updateTechCard } from '../data/formConfig';
 
@@ -428,8 +428,49 @@ const TechCardForm = () => {
   // Значения параметров { paramId: value }
   const [paramValues, setParamValues] = useState({});
 
+  // Поля, которые пользователь редактировал вручную (не перезаписываются бэкендом)
+  const [userEditedFields, setUserEditedFields] = useState({});
+
   // Флаг отправки на обработку
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Состояние свёрнутых/развёрнутых блоков { blockId: true/false }
+  const [collapsedBlocks, setCollapsedBlocks] = useState({});
+
+  // Функция переключения сворачивания блока
+  const toggleBlockCollapse = (blockId) => {
+    setCollapsedBlocks(prev => ({
+      ...prev,
+      [blockId]: !prev[blockId]
+    }));
+  };
+
+  // Проверка, все ли параметры блока заполнены
+  const isBlockComplete = (block) => {
+    if (!block.params || block.params.length === 0) return true;
+    
+    return block.params.every(param => {
+      const compositeKey = `${block.id}.${param.id}`;
+      const value = paramValues[compositeKey];
+      // Считаем заполненным, если есть значение или это картинка
+      return (value && value.trim() !== '') || param.image;
+    });
+  };
+
+  // Подсчёт заполненных параметров в блоке
+  const getBlockProgress = (block) => {
+    if (!block.params || block.params.length === 0) return { filled: 0, total: 0 };
+    
+    const total = block.params.filter(p => !p.image).length; // Не считаем картинки
+    const filled = block.params.filter(param => {
+      if (param.image) return false; // Картинки не считаем
+      const compositeKey = `${block.id}.${param.id}`;
+      const value = paramValues[compositeKey];
+      return value && value.trim() !== '';
+    }).length;
+    
+    return { filled, total };
+  };
 
   // Загрузка типов объектов при старте
   useEffect(() => {
@@ -585,6 +626,12 @@ const TechCardForm = () => {
     };
     setParamValues(updatedValues);
 
+    // Помечаем поле как отредактированное пользователем
+    setUserEditedFields(prev => ({
+      ...prev,
+      [compositeKey]: true
+    }));
+
     // Отправляем обновлённые данные на бэкенд
     try {
       // Формируем payload для бэкенда
@@ -634,6 +681,11 @@ const TechCardForm = () => {
           block.params.forEach(param => {
             const key = `${block.id}.${param.id}`;
             
+            // Если пользователь редактировал это поле — не перезаписываем
+            if (userEditedFields[key]) {
+              return;
+            }
+            
             // Получаем значение от бэкенда
             let backendValue = null;
             if (param.value !== null && !Array.isArray(param.value) && typeof param.value !== 'object') {
@@ -644,11 +696,7 @@ const TechCardForm = () => {
             
             // Если бэкенд прислал конкретное значение (не массив/словарь опций)
             if (backendValue !== null) {
-              const currentValue = updatedValues[key] || '';
-              // Если значение от бэкенда отличается от текущего — перезаписываем
-              if (backendValue !== currentValue) {
-                newValues[key] = backendValue;
-              }
+              newValues[key] = backendValue;
             } else if (!(key in updatedValues)) {
               // Новый параметр, которого не было — оставляем пустым
               newValues[key] = '';
@@ -908,74 +956,113 @@ const TechCardForm = () => {
             </div>
 
             {/* Все динамические блоки от бэкенда */}
-            {blocks.map((block, blockIndex) => (
+            {blocks.map((block, blockIndex) => {
+              const isCollapsed = collapsedBlocks[block.id];
+              const isComplete = isBlockComplete(block);
+              const progress = getBlockProgress(block);
+              
+              return (
               <div key={block.id} className="bg-[#0C1515]/50 rounded-xl p-5">
-                <h3 className={`font-semibold mb-4 ${blockIndex % 2 === 0 ? 'text-[#0084FF]' : 'text-[#FFFB78]'}`}>
-                  {blockIndex + 1}. {block.name}
-                </h3>
-                
-                {block.params.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse table-auto">
-                      <thead>
-                        <tr className="border-b border-[#646C89]/30">
-                          <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2 whitespace-nowrap">Параметр</th>
-                          <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2">Значение</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {block.params.map(param => {
-                          const compositeKey = `${block.id}.${param.id}`;
-                          
-                          // Если параметр содержит изображение
-                          if (param.image || (param.value && typeof param.value === 'object' && param.value.image)) {
-                            let imageSrc = param.image || param.value.image;
-                            
-                            // Если это base64 без префикса data:image, добавляем его
-                            if (imageSrc && !imageSrc.startsWith('data:') && !imageSrc.startsWith('http')) {
-                              // Определяем тип изображения (по умолчанию png)
-                              imageSrc = `data:image/png;base64,${imageSrc}`;
-                            }
-                            
-                            return (
-                              <tr key={compositeKey} className="border-b border-[#646C89]/20">
-                                <td colSpan={2} className="py-4 px-2">
-                                  <div className="text-white text-sm mb-2">
-                                    <span className="text-[#0084FF] font-mono mr-2">{compositeKey}</span>
-                                    {param.name}
-                                  </div>
-                                  <div className="flex justify-center">
-                                    <img 
-                                      src={imageSrc} 
-                                      alt={param.name}
-                                      className="max-w-full max-h-96 rounded-lg border border-[#646C89]/30"
-                                    />
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          }
-                          
-                          return (
-                            <TableRowInput
-                              key={compositeKey}
-                              paramKey={compositeKey}
-                              paramName={param.name}
-                              value={paramValues[compositeKey] || ''}
-                              onChange={(val) => handleParamChange(compositeKey, val)}
-                              standardValues={getStandardValuesForParam(param, block.id)}
-                              typeData={getParamTypeData(param)}
-                            />
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                {/* Заголовок блока с кнопкой сворачивания */}
+                <div 
+                  className="flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => toggleBlockCollapse(block.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    {/* Иконка сворачивания */}
+                    <span className="text-[#646C89] transition-transform">
+                      {isCollapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
+                    </span>
+                    
+                    {/* Заголовок */}
+                    <h3 className={`font-semibold ${blockIndex % 2 === 0 ? 'text-[#0084FF]' : 'text-[#FFFB78]'}`}>
+                      {blockIndex + 1}. {block.name}
+                    </h3>
                   </div>
-                ) : (
-                  <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
+                  
+                  {/* Индикатор заполненности */}
+                  <div className="flex items-center gap-2">
+                    {progress.total > 0 && (
+                      <span className="text-xs text-[#646C89]">
+                        {progress.filled}/{progress.total}
+                      </span>
+                    )}
+                    {isComplete ? (
+                      <CheckCircle size={20} className="text-green-500" />
+                    ) : (
+                      <AlertCircle size={20} className="text-orange-400" />
+                    )}
+                  </div>
+                </div>
+                
+                {/* Содержимое блока (скрывается при сворачивании) */}
+                {!isCollapsed && (
+                  <div className="mt-4">
+                    {block.params.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse table-auto">
+                          <thead>
+                            <tr className="border-b border-[#646C89]/30">
+                              <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2 whitespace-nowrap">Параметр</th>
+                              <th className="text-left text-[#646C89] text-xs font-medium py-2 px-2">Значение</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {block.params.map(param => {
+                              const compositeKey = `${block.id}.${param.id}`;
+                              
+                              // Если параметр содержит изображение
+                              if (param.image || (param.value && typeof param.value === 'object' && param.value.image)) {
+                                let imageSrc = param.image || param.value.image;
+                                
+                                // Если это base64 без префикса data:image, добавляем его
+                                if (imageSrc && !imageSrc.startsWith('data:') && !imageSrc.startsWith('http')) {
+                                  // Определяем тип изображения (по умолчанию png)
+                                  imageSrc = `data:image/png;base64,${imageSrc}`;
+                                }
+                                
+                                return (
+                                  <tr key={compositeKey} className="border-b border-[#646C89]/20">
+                                    <td colSpan={2} className="py-4 px-2">
+                                      <div className="text-white text-sm mb-2">
+                                        <span className="text-[#0084FF] font-mono mr-2">{compositeKey}</span>
+                                        {param.name}
+                                      </div>
+                                      <div className="flex justify-center">
+                                        <img 
+                                          src={imageSrc} 
+                                          alt={param.name}
+                                          className="max-w-full max-h-96 rounded-lg border border-[#646C89]/30"
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                              
+                              return (
+                                <TableRowInput
+                                  key={compositeKey}
+                                  paramKey={compositeKey}
+                                  paramName={param.name}
+                                  value={paramValues[compositeKey] || ''}
+                                  onChange={(val) => handleParamChange(compositeKey, val)}
+                                  standardValues={getStandardValuesForParam(param, block.id)}
+                                  typeData={getParamTypeData(param)}
+                                />
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
+                    )}
+                  </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </>
         )}
 
