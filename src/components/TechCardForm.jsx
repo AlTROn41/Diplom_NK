@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, Loader2, FileCheck, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Loader2, FileCheck } from 'lucide-react';
 import api from '../services/api';
 import { buildTechCardPayload, updateTechCard } from '../data/formConfig';
-import ImageUpload from './ImageUpload';
 
 // Компонент поля с возможностью ввода И выбора из списка
 const ComboBoxField = ({ label, value, inputValue, options, onChange,
@@ -287,55 +286,6 @@ const InputWithSuggestions = ({ label, value, onChange, standardValues, loading,
   );
 };
 
-// Компонент кастомного поля (название + значение + удаление)
-const CustomField = ({ field, onUpdate, onDelete }) => {
-  return (
-    <div className="flex gap-3 items-start">
-      <div className="flex-1">
-        <input
-          type="text"
-          value={field.name}
-          onChange={(e) => onUpdate(field.id, 'name', e.target.value)}
-          placeholder="Название поля"
-          className="
-            w-full bg-[#0C1515] border border-[#646C89]
-            rounded-lg px-4 py-3
-            text-white placeholder-[#646C89]
-            focus:outline-none focus:border-[#0084FF]
-            transition-colors mb-2
-          "
-        />
-        <input
-          type="text"
-          value={field.value}
-          onChange={(e) => onUpdate(field.id, 'value', e.target.value)}
-          placeholder="Значение"
-          className="
-            w-full bg-[#0C1515] border border-[#646C89]
-            rounded-lg px-4 py-3
-            text-white placeholder-[#646C89]
-            focus:outline-none focus:border-[#0084FF]
-            transition-colors
-          "
-        />
-      </div>
-      <button
-        type="button"
-        onClick={() => onDelete(field.id)}
-        className="
-          mt-3 p-2
-          text-[#646C89] hover:text-red-500
-          hover:bg-red-500/10
-          rounded-lg
-          transition-colors
-        "
-        title="Удалить поле"
-      >
-        <Trash2 size={20} />
-      </button>
-    </div>
-  );
-};
 
 // Основной компонент формы технологической карты
 const TechCardForm = () => {
@@ -361,13 +311,6 @@ const TechCardForm = () => {
 
   // Флаг отправки на обработку
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Кастомные поля пользователя
-  const [customFields, setCustomFields] = useState([]);
-  const [nextCustomFieldId, setNextCustomFieldId] = useState(1);
-
-  // Загруженные изображения
-  const [uploadedImages, setUploadedImages] = useState([]);
 
   // Загрузка типов объектов при старте
   useEffect(() => {
@@ -548,32 +491,6 @@ const TechCardForm = () => {
     return [];
   };
 
-  // Функции для кастомных полей
-  const addCustomField = () => {
-    setCustomFields(prev => [
-      ...prev,
-      { id: nextCustomFieldId, name: '', value: '' }
-    ]);
-    setNextCustomFieldId(prev => prev + 1);
-  };
-
-  const updateCustomField = (id, field, value) => {
-    setCustomFields(prev =>
-      prev.map(f => f.id === id ? { ...f, [field]: value } : f)
-    );
-  };
-
-  const deleteCustomField = (id) => {
-    setCustomFields(prev => prev.filter(f => f.id !== id));
-  };
-
-  const getObjectName = () => {
-    return objectInputValue || '';
-  };
-
-  const getElementName = () => {
-    return elementInputValue || '';
-  };
 
   // Определяем тип данных параметра по значению
   const getParamTypeData = (param) => {
@@ -597,18 +514,6 @@ const TechCardForm = () => {
     try {
       // Формируем payload для бэкенда
       const techCardPayload = buildTechCardPayload(objectType, blocks, paramValues);
-      
-      // Добавляем кастомные поля в первый блок
-      const filledCustomFields = customFields.filter(f => f.name.trim() || f.value.trim());
-      if (filledCustomFields.length > 0 && techCardPayload.params['1']) {
-        filledCustomFields.forEach((field, idx) => {
-          const customId = `custom_${idx + 1}`;
-          techCardPayload.params['1'].params[customId] = {
-            name: field.name,
-            val: field.value
-          };
-        });
-      }
 
       console.log('═══════════════════════════════════════════════════');
       console.log('        ОТПРАВКА НА БЭКЕНД');
@@ -674,6 +579,7 @@ const TechCardForm = () => {
   };
 
   const hasSelectedObject = objectInputValue.trim();
+  const hasSelectedElement = selectedElement && blocks.length > 0;
 
   return (
     <div className="bg-[#21262F] rounded-2xl p-6 md:p-8">
@@ -682,73 +588,97 @@ const TechCardForm = () => {
       </h2>
 
       <div className="space-y-6">
-        {/* Секция 1: Выбор объекта */}
-        <div className="bg-[#0C1515]/50 rounded-xl p-5">
-          <h3 className="text-[#0084FF] font-semibold mb-4">1. Объект контроля</h3>
-          <ComboBoxField
-            label="Тип объекта"
-            value={selectedObject}
-            inputValue={objectInputValue}
-            options={objectTypes}
-            onChange={handleObjectSelect}
-            onInputChange={handleObjectInputChange}
-            loading={loadingObjects}
-            placeholder="Выберите или введите тип объекта"
-          />
-        </div>
-
-        {/* Секция 2: Выбор элемента */}
-        <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
-          <h3 className="text-[#FFFB78] font-semibold mb-4">2. Элемент контроля</h3>
-          <ComboBoxField
-            label="Тип элемента"
-            value={selectedElement}
-            inputValue={elementInputValue}
-            options={elements}
-            onChange={handleElementSelect}
-            onInputChange={handleElementInputChange}
-            loading={loadingElements}
-            placeholder={selectedObject ? "Выберите или введите элемент" : "Введите элемент контроля"}
-            disabled={!hasSelectedObject}
-          />
-        </div>
-
-        {/* Секция 3: Блоки с параметрами */}
-        {loadingBlocks ? (
-          <div className="bg-[#0C1515]/50 rounded-xl p-5">
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={32} className="animate-spin text-[#0084FF]" />
-              <span className="ml-3 text-[#646C89]">Загрузка параметров...</span>
+        {/* До выбора элемента: показываем секции выбора */}
+        {!hasSelectedElement && (
+          <>
+            {/* Секция 1: Выбор объекта */}
+            <div className="bg-[#0C1515]/50 rounded-xl p-5">
+              <h3 className="text-[#0084FF] font-semibold mb-4">1. Объект контроля</h3>
+              <ComboBoxField
+                label="Тип объекта"
+                value={selectedObject}
+                inputValue={objectInputValue}
+                options={objectTypes}
+                onChange={handleObjectSelect}
+                onInputChange={handleObjectInputChange}
+                loading={loadingObjects}
+                placeholder="Выберите или введите тип объекта"
+              />
             </div>
-          </div>
-        ) : blocks.length > 0 ? (
-          blocks.map((block, blockIndex) => (
-            <div key={block.id} className="bg-[#0C1515]/50 rounded-xl p-5">
-              <h3 className={`font-semibold mb-4 ${blockIndex % 2 === 0 ? 'text-[#0084FF]' : 'text-[#FFFB78]'}`}>
-                {blockIndex + 3}. {block.name}
-              </h3>
-              
-              {block.params.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {block.params.map(param => {
-                    // Пропускаем параметр "Объект контроля" - он уже выбран выше
-                    if (param.name === "Объект контроля") {
-                      return (
-                        <div key={param.id} className="md:col-span-2">
-                          <label className="block text-[#646C89] text-sm font-medium mb-2">
-                            {param.name}
-                          </label>
-                          <div className="bg-[#0C1515] border border-[#646C89]/50 rounded-lg px-4 py-3 text-white">
-                            {param.value?.name || paramValues[param.id] || elementInputValue || '—'}
-                          </div>
-                        </div>
-                      );
-                    }
-                    
-                    return (
+
+            {/* Секция 2: Выбор элемента */}
+            <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
+              <h3 className="text-[#FFFB78] font-semibold mb-4">2. Элемент контроля</h3>
+              <ComboBoxField
+                label="Тип элемента"
+                value={selectedElement}
+                inputValue={elementInputValue}
+                options={elements}
+                onChange={handleElementSelect}
+                onInputChange={handleElementInputChange}
+                loading={loadingElements}
+                placeholder={selectedObject ? "Выберите или введите элемент" : "Введите элемент контроля"}
+                disabled={!hasSelectedObject}
+              />
+            </div>
+
+            {/* Индикатор загрузки */}
+            {loadingBlocks && (
+              <div className="bg-[#0C1515]/50 rounded-xl p-5">
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={32} className="animate-spin text-[#0084FF]" />
+                  <span className="ml-3 text-[#646C89]">Загрузка параметров...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Подсказка */}
+            {!loadingBlocks && !selectedElement && (
+              <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
+                <h3 className="text-[#0084FF] font-semibold mb-4">3. Параметры</h3>
+                <p className="text-[#646C89] text-center py-4">
+                  {hasSelectedObject ? 'Выберите элемент контроля для загрузки параметров' : 'Сначала выберите тип объекта'}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* После выбора элемента: показываем ВСЕ блоки от бэкенда (включая Объект контроля) */}
+        {hasSelectedElement && (
+          <>
+            {/* Кнопка для возврата к выбору */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-[#646C89]">
+                Выбрано: <span className="text-white">{objectInputValue}</span> → <span className="text-white">{elementInputValue}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedElement(null);
+                  setElementInputValue('');
+                  setBlocks([]);
+                  setParamValues({});
+                }}
+                className="text-[#0084FF] hover:text-[#0084FF]/80 text-sm transition-colors"
+              >
+                ← Изменить выбор
+              </button>
+            </div>
+
+            {/* Все динамические блоки от бэкенда */}
+            {blocks.map((block, blockIndex) => (
+              <div key={block.id} className="bg-[#0C1515]/50 rounded-xl p-5">
+                <h3 className={`font-semibold mb-4 ${blockIndex % 2 === 0 ? 'text-[#0084FF]' : 'text-[#FFFB78]'}`}>
+                  {blockIndex + 1}. {block.name}
+                </h3>
+                
+                {block.params.length > 0 ? (
+                  <div className="space-y-4">
+                    {block.params.map(param => (
                       <InputWithSuggestions
                         key={param.id}
-                        label={param.name}
+                        label={`${block.id}.${param.id} ${param.name}`}
                         value={paramValues[param.id] || ''}
                         onChange={(val) => handleParamChange(param.id, val)}
                         standardValues={getStandardValuesForParam(param)}
@@ -756,80 +686,16 @@ const TechCardForm = () => {
                         placeholder="Введите или выберите значение"
                         typeData={getParamTypeData(param)}
                       />
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
-              )}
-            </div>
-          ))
-        ) : selectedElement ? (
-          <div className="bg-[#0C1515]/50 rounded-xl p-5">
-            <h3 className="text-[#0084FF] font-semibold mb-4">3. Параметры</h3>
-            <p className="text-[#646C89] text-center py-4">Нет доступных параметров для этого элемента</p>
-          </div>
-        ) : (
-          <div className={`bg-[#0C1515]/50 rounded-xl p-5 transition-opacity ${hasSelectedObject ? 'opacity-100' : 'opacity-50'}`}>
-            <h3 className="text-[#0084FF] font-semibold mb-4">3. Параметры</h3>
-            <p className="text-[#646C89] text-center py-4">
-              {hasSelectedObject ? 'Выберите элемент контроля для загрузки параметров' : 'Сначала выберите тип объекта'}
-            </p>
-          </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[#646C89] text-center py-4">Нет параметров в этом блоке</p>
+                )}
+              </div>
+            ))}
+          </>
         )}
 
-        {/* Секция: Дополнительные поля (кастомные) */}
-        <div className="bg-[#0C1515]/50 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[#FFFB78] font-semibold">
-              {blocks.length + 3}. Дополнительные поля
-            </h3>
-            <button
-              type="button"
-              onClick={addCustomField}
-              className="
-                flex items-center gap-2
-                px-4 py-2
-                bg-[#0084FF]/20 hover:bg-[#0084FF]/30
-                text-[#0084FF]
-                rounded-lg
-                transition-colors
-                text-sm font-medium
-              "
-            >
-              <Plus size={18} />
-              Добавить поле
-            </button>
-          </div>
-
-          {customFields.length > 0 ? (
-            <div className="space-y-4">
-              {customFields.map(field => (
-                <CustomField
-                  key={field.id}
-                  field={field}
-                  onUpdate={updateCustomField}
-                  onDelete={deleteCustomField}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-[#646C89] text-center py-4">
-              Нажмите "Добавить поле" чтобы создать дополнительные параметры
-            </p>
-          )}
-        </div>
-
-        {/* Секция: Загрузка изображений */}
-        <div className="bg-[#0C1515]/50 rounded-xl p-5">
-          <h3 className="text-[#0084FF] font-semibold mb-4">
-            {blocks.length + 4}. Снимки
-          </h3>
-          <ImageUpload
-            images={uploadedImages}
-            onImagesChange={setUploadedImages}
-          />
-        </div>
 
         {/* Кнопка отправки */}
         <div className="pt-4">

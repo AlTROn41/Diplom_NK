@@ -152,9 +152,25 @@ class TechCardData:
 
         return False
     
-    def insert_param_to_block_reWrite(self, block_name: str, insert_id: int, param: Dict[str, Any]) -> bool:
+    def insert_param_to_block_reWrite(
+        self,
+        block_name: str,
+        insert_id: Union[int, str],
+        param: Dict[str, Any]
+    ) -> bool:
         if "name" not in param:
             raise ValueError("param должен содержать ключ 'name'")
+
+        # --- нормализация insert_id ---
+        try:
+            if isinstance(insert_id, str):
+                if "." in insert_id:
+                    raise ValueError
+                insert_id = int(insert_id)
+            else:
+                insert_id = int(insert_id)
+        except (ValueError, TypeError):
+            raise ValueError(f"insert_id должен быть целым числом, получено: {insert_id!r}")
 
         for block in self.params.values():
             if block.get("name") != block_name:
@@ -162,52 +178,32 @@ class TechCardData:
 
             params = block.setdefault("params", {})
 
-            # 1. Проверяем, есть ли параметр с таким же name
+            # --- собираем только int-ключи ---
+            int_keys = [k for k in params.keys() if isinstance(k, int)]
+
+            # --- ищем параметр с тем же name ---
             old_key = None
-            for k, existing in params.items():
-                if existing.get("name") == param["name"]:
+            for k in int_keys:
+                if params[k].get("name") == param["name"]:
                     old_key = k
                     break
 
-            old_key_found = old_key is not None
-            
-            # 2. Если нашли старый — удаляем
-            if old_key_found:
+            # --- если параметр уже есть — удаляем ---
+            if old_key is not None:
                 params.pop(old_key)
-                
-                # Корректируем insert_id только если old_key был целым числом
-                if isinstance(old_key, int) and old_key < insert_id:
+                int_keys.remove(old_key)
+
+                # если удалённый был левее точки вставки — сдвигаем insert_id
+                if old_key < insert_id:
                     insert_id -= 1
 
-                # Сдвигаем только целочисленные ключи, которые больше old_key
-                if isinstance(old_key, int):
-                    sorted_int_keys = sorted(k for k in params if isinstance(k, int))
-                    for k in sorted_int_keys:
-                        if k > old_key:
-                            # Ищем ближайший свободный ключ слева
-                            new_key = k - 1
-                            while new_key in params or new_key == old_key:
-                                new_key -= 1
-                            if new_key not in params:
-                                params[new_key] = params.pop(k)
+            # --- сдвигаем хвост вправо начиная с insert_id ---
+            for k in sorted((k for k in int_keys if k >= insert_id), reverse=True):
+                params[k + 1] = params.pop(k)
 
-            # 3. Сдвигаем хвост вправо только для целочисленных ключей, начиная с insert_id
-            # Собираем все целочисленные ключи >= insert_id
-            int_keys_greater_equal = []
-            for k in params.keys():
-                if isinstance(k, int) and k >= insert_id:
-                    int_keys_greater_equal.append(k)
-            
-            # Сортируем по убыванию и сдвигаем
-            for k in sorted(int_keys_greater_equal, reverse=True):
-                # Ищем ближайший свободный ключ справа
-                new_key = k + 1
-                while new_key in params:
-                    new_key += 1
-                params[new_key] = params.pop(k)
-
-            # 4. Вставляем новый параметр
+            # --- вставляем новый параметр ---
             params[insert_id] = dict(param)
+
             return True
 
         return False

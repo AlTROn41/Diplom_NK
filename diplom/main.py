@@ -1,3 +1,8 @@
+import sys
+import io
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 from repositories.postgresDataBase import PostgresDataBase
 from services.tech_card_service import TechCardService
 from services.tech_card_service import TechCardData
